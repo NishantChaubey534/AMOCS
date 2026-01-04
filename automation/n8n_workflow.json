@@ -1,0 +1,73 @@
+{
+  "name": "AMOCS Anomaly Response",
+  "nodes": [
+    {
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 300],
+      "parameters": { "path": "navy-alert", "responseMode": "responseNode" }
+    },
+    {
+      "name": "Decide Anomaly Type",
+      "type": "n8n-nodes-base.switch",
+      "position": [450, 300],
+      "parameters": {
+        "dataPropertyName": "body.anomalyType",
+        "cases": [
+          { "value": "COURSE_DEVIATION" },
+          { "value": "FUEL_ANOMALY" }
+        ]
+      }
+    },
+    {
+      "name": "Reroute Nearest Ship",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3001/api/command/reroute",
+        "bodyParameters": {
+          "anomalyLocation": "={{$json.body.shipPosition}}",
+          "priority": "HIGH"
+        }
+      },
+      "condition": "COURSE_DEVIATION"
+    },
+    {
+      "name": "Alert Command Center",
+      "type": "n8n-nodes-base.email",
+      "position": [650, 400],
+      "parameters": {
+        "to": "command.center@simulation.navy",
+        "subject": "AMOCS Autonomous Alert: Fuel Anomaly",
+        "text": "Ship {{$json.body.shipId}} has a critical fuel anomaly. Suggested action: Dispatch support vessel."
+      },
+      "condition": "FUEL_ANOMALY"
+    },
+    {
+      "name": "Log Action",
+      "type": "n8n-nodes-base.mongoDb",
+      "position": [850, 300],
+      "parameters": {
+        "operation": "insert",
+        "document": {
+          "action": "={{$node[\"Decide Anomaly Type\"].json.action}}",
+          "shipId": "={{$json.body.shipId}}",
+          "timestamp": "={{ new Date().toISOString() }}",
+          "autonomous": true
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": { "main": [[{ "node": "Decide Anomaly Type", "type": "main" }]] },
+    "Decide Anomaly Type": {
+      "main": [
+        [{ "node": "Reroute Nearest Ship", "type": "main" }],
+        [{ "node": "Alert Command Center", "type": "main" }]
+      ]
+    },
+    "Reroute Nearest Ship": { "main": [[{ "node": "Log Action", "type": "main" }]] },
+    "Alert Command Center": { "main": [[{ "node": "Log Action", "type": "main" }]] }
+  }
+}
